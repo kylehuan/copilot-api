@@ -12,7 +12,7 @@ state.accountType = "individual"
 
 // Helper to mock fetch
 const fetchMock = mock(
-  (_url: string, opts: { headers: Record<string, string> }) => {
+  (_url: string, opts: { body?: string; headers: Record<string, string> }) => {
     return {
       ok: true,
       json: () => ({ id: "123", object: "chat.completion", choices: [] }),
@@ -22,6 +22,14 @@ const fetchMock = mock(
 )
 // @ts-expect-error - Mock fetch doesn't implement all fetch properties
 ;(globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock
+
+function getLastFetchOptions() {
+  const lastCall = fetchMock.mock.calls.at(-1)
+  if (!lastCall) {
+    throw new Error("fetch was not called")
+  }
+  return lastCall[1] as { body?: string; headers: Record<string, string> }
+}
 
 test("sets X-Initiator to agent if tool/assistant present", async () => {
   const payload: ChatCompletionsPayload = {
@@ -33,9 +41,7 @@ test("sets X-Initiator to agent if tool/assistant present", async () => {
   }
   await createChatCompletions(payload)
   expect(fetchMock).toHaveBeenCalled()
-  const headers = (
-    fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
-  ).headers
+  const { headers } = getLastFetchOptions()
   expect(headers["X-Initiator"]).toBe("agent")
 })
 
@@ -49,8 +55,20 @@ test("sets X-Initiator to user if only user present", async () => {
   }
   await createChatCompletions(payload)
   expect(fetchMock).toHaveBeenCalled()
-  const headers = (
-    fetchMock.mock.calls[1][1] as { headers: Record<string, string> }
-  ).headers
+  const { headers } = getLastFetchOptions()
   expect(headers["X-Initiator"]).toBe("user")
+})
+
+test("normalizes adaptive thinking before forwarding to Copilot", async () => {
+  const payload: ChatCompletionsPayload = {
+    messages: [{ role: "user", content: "hi" }],
+    model: "claude-sonnet-4",
+    thinking: { type: "adaptive" },
+  }
+
+  await createChatCompletions(payload)
+
+  const { body } = getLastFetchOptions()
+  const forwardedPayload = JSON.parse(body ?? "{}") as ChatCompletionsPayload
+  expect(forwardedPayload.thinking).toEqual({ type: "enabled" })
 })

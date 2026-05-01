@@ -43,6 +43,7 @@ export function translateToOpenAI(
     user: payload.metadata?.user_id,
     tools: translateAnthropicToolsToOpenAI(payload.tools),
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
+    thinking: translateAnthropicThinkingToOpenAI(payload.thinking),
   }
 }
 
@@ -273,6 +274,19 @@ function translateAnthropicToolChoiceToOpenAI(
     default: {
       return undefined
     }
+  }
+}
+
+function translateAnthropicThinkingToOpenAI(
+  thinking: AnthropicMessagesPayload["thinking"],
+): ChatCompletionsPayload["thinking"] {
+  if (!thinking) {
+    return undefined
+  }
+
+  return {
+    ...thinking,
+    type: thinking.type === "adaptive" ? "enabled" : thinking.type,
   }
 }
 

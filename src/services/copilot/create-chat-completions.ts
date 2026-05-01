@@ -10,7 +10,9 @@ export const createChatCompletions = async (
 ) => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
 
-  const enableVision = payload.messages.some(
+  const requestPayload = normalizeChatCompletionsPayload(payload)
+
+  const enableVision = requestPayload.messages.some(
     (x) =>
       typeof x.content !== "string"
       && x.content?.some((x) => x.type === "image_url"),
@@ -18,7 +20,7 @@ export const createChatCompletions = async (
 
   // Agent/user check for X-Initiator header
   // Determine if any message is from an agent ("assistant" or "tool")
-  const isAgentCall = payload.messages.some((msg) =>
+  const isAgentCall = requestPayload.messages.some((msg) =>
     ["assistant", "tool"].includes(msg.role),
   )
 
@@ -31,7 +33,7 @@ export const createChatCompletions = async (
   const response = await fetch(`${copilotBaseUrl(state)}/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body: JSON.stringify(requestPayload),
   })
 
   if (!response.ok) {
@@ -39,11 +41,27 @@ export const createChatCompletions = async (
     throw new HTTPError("Failed to create chat completions", response)
   }
 
-  if (payload.stream) {
+  if (requestPayload.stream) {
     return events(response)
   }
 
   return (await response.json()) as ChatCompletionResponse
+}
+
+function normalizeChatCompletionsPayload(
+  payload: ChatCompletionsPayload,
+): ChatCompletionsPayload {
+  if (payload.thinking?.type !== "adaptive") {
+    return payload
+  }
+
+  return {
+    ...payload,
+    thinking: {
+      ...payload.thinking,
+      type: "enabled",
+    },
+  }
 }
 
 // Streaming types
@@ -148,6 +166,12 @@ export interface ChatCompletionsPayload {
     | { type: "function"; function: { name: string } }
     | null
   user?: string | null
+  thinking?: ThinkingConfig | null
+}
+
+interface ThinkingConfig {
+  type: "disabled" | "enabled" | "adaptive" | (string & {})
+  budget_tokens?: number
 }
 
 export interface Tool {
